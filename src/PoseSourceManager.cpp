@@ -169,39 +169,40 @@ PoseObservation
 PoseSourceManager::ProcessPose( const PoseSE3& pose,
                                 const MatrixType& cov,
                                 const ros::Time& stamp,
-                                const std::string& refFrame,
-                                const std::string& tarFrame )
+                                const std::string& observerFrame,
+                                const std::string& spottedFrame )
 {
 	PoseSE3 obsPose;
 	MatrixType obsCov = GetCovariance( stamp, cov );
 	try
 	{
-		PoseSE3 orefToRef = _extrinsics->GetExtrinsics( refFrame,
+		PoseSE3 obsvToRef = _extrinsics->GetExtrinsics( observerFrame,
 		                                                _referenceFrame );
-		PoseSE3 tarToOtar = _extrinsics->GetExtrinsics( tarFrame,
-		                                                _targetFrame );
-		obsPose = orefToRef * pose * tarToOtar;
-		MatrixType adj = PoseSE3::Adjoint( tarToOtar.Inverse() );
+		PoseSE3 tarToSpotted = _extrinsics->GetExtrinsics( _targetFrame,
+		                                                   spottedFrame );
+		obsPose = obsvToRef * pose * tarToSpotted;
+		MatrixType adj = PoseSE3::Adjoint( obsvToRef.Inverse() );
 		obsCov = adj * obsCov * adj.transpose();
 	}
+	// If fails, see if we're in the observer/target flipped case
 	catch( ExtrinsicsException )
 	{
 		try
 		{
-			PoseSE3 tarToOref = _extrinsics->GetExtrinsics( _targetFrame,
-			                                                refFrame );
-			PoseSE3 otarToRef = _extrinsics->GetExtrinsics( tarFrame,
-			                                                _referenceFrame );
-			obsPose = otarToRef * pose.Inverse() * tarToOref;
-			MatrixType adj = PoseSE3::Adjoint( pose * tarToOref.Inverse()  );
+			PoseSE3 tarToObsv = _extrinsics->GetExtrinsics( _targetFrame,
+			                                                observerFrame );
+			PoseSE3 spottedToRef = _extrinsics->GetExtrinsics( spottedFrame,
+			                                                   _referenceFrame );
+			obsPose = spottedToRef * pose.Inverse() * tarToObsv;
+			MatrixType adj = PoseSE3::Adjoint( pose * spottedToRef.Inverse()  );
 			obsCov = adj * obsCov * adj.transpose();
 		}
 		catch( ExtrinsicsException )
 		{
 			std::stringstream ss;
-			ss << "Could not convert obs of " << tarFrame << " to " <<
-			refFrame << " to desired pose of " << _targetFrame << "to " <<
-			_referenceFrame; 
+			ss << "Could not convert obs of " << spottedFrame << " to " <<
+			observerFrame << " to desired pose of " << _targetFrame << "to " <<
+			_referenceFrame;
 			throw std::runtime_error( ss.str() );
 		}
 	}
