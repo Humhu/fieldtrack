@@ -182,7 +182,7 @@ PoseSourceManager::ProcessPose( const PoseSE3& pose,
 		                                                _targetFrame );
 		obsPose = orefToRef * pose * tarToOtar;
 		MatrixType adj = PoseSE3::Adjoint( tarToOtar.Inverse() );
-		obsCov = adj * cov * adj.transpose();
+		obsCov = adj * obsCov * adj.transpose();
 	}
 	catch( ExtrinsicsException )
 	{
@@ -194,7 +194,7 @@ PoseSourceManager::ProcessPose( const PoseSE3& pose,
 			                                                _referenceFrame );
 			obsPose = otarToRef * pose.Inverse() * tarToOref;
 			MatrixType adj = PoseSE3::Adjoint( pose * tarToOref.Inverse()  );
-			obsCov = adj * cov * adj.transpose();
+			obsCov = adj * obsCov * adj.transpose();
 		}
 		catch( ExtrinsicsException )
 		{
