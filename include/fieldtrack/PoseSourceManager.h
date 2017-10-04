@@ -39,6 +39,7 @@ private:
 	std::string _referenceFrame;
 	std::string _targetFrame;
 	ExtrinsicsInterface::Ptr _extrinsics;
+	bool _invertTransform;
 
 	std::string _obsRefFrame;
 	bool _twoDimensional;
@@ -48,11 +49,11 @@ private:
 	AdaptiveObsCovEstimator _adaptiveCov;
 
 	unsigned int GetDim() const;
-	PoseObservation ProcessPose( const PoseSE3& pose,
+	PoseObservation ProcessPose( PoseSE3 pose,
 	                             const MatrixType& cov,
 	                             const ros::Time& time,
-	                             const std::string& refFrame,
-	                             const std::string& tarFrame );
+	                             std::string refFrame,
+	                              std::string tarFrame );
 	MatrixType GetCovariance( const ros::Time& stamp,
 	                          const MatrixType& recv );
 };
