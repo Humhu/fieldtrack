@@ -2,7 +2,6 @@
 
 #include "fieldtrack/FieldtrackCommon.h"
 #include "fieldtrack/VelocityEstimator.h"
-#include "fieldtrack/NoiseLearner.h"
 
 #include "argus_utils/utils/ParamUtils.h"
 #include "argus_utils/geometry/GeometryUtils.h"
@@ -33,29 +32,6 @@ public:
 		_resetServer = ph.advertiseService( "reset",
 		                                    &VelocityEstimatorNode::ResetCallback,
 		                                    this );
-
-		// Initialize covariance learner
-		_enableLearning = ph.hasParam( "learner" );
-		if( _enableLearning )
-		{
-			ROS_INFO_STREAM( "Initializing learner..." );
-			ros::NodeHandle lh( ph.resolveName( "learner" ) );
-			GetParamRequired( lh, "rate", _learnRate );
-			_learner.Initialize( lh );
-
-			_transModel = _estimator.InitTransCovModel();
-			_learner.RegisterTransModel( _transModel );
-
-			_obsModels = _estimator.InitObsCovModels();
-			typedef ModelRegistry::value_type Item;
-			BOOST_FOREACH( Item & item, _obsModels )
-			{
-				const std::string& name = item.first;
-				const CovarianceModel::Ptr& model = item.second;
-				_learner.RegisterObsModel( name, model );
-			}
-			_learner.StartNewChain();
-		}
 
 		// Subscribe to all update topics
 		YAML::Node updateSources;
@@ -220,14 +196,6 @@ public:
 				_infoPub.publish( boost::apply_visitor( vis, fi ) );
 			}
 		}
-		if( _enableLearning )
-		{
-			FilterInfoMessageVisitor vis;
-			BOOST_FOREACH( const FilterInfo &fi, info )
-			{
-				_learner.BufferInfo( fi );
-			}
-		}
 	}
 
 	bool ResetCallback( fieldtrack::ResetFilter::Request& req,
@@ -288,40 +256,7 @@ public:
 		_initialized = !req.filter_time.isZero();
 		_updateTimer.stop();
 		_updateTimer.start();
-		if( _enableLearning )
-		{
-			_learner.StartNewChain();
-		}
 		return true;
-	}
-
-	void LearnSpin()
-	{
-		if( !_enableLearning )
-		{
-			ros::waitForShutdown();
-			return;
-		}
-
-		ros::Rate spinRate( _learnRate );
-		while( !ros::isShuttingDown() )
-		{
-			spinRate.sleep();
-			ROS_INFO_STREAM( "Spinning..." );
-			// TODO Check for chain time length and cap it
-			_learner.LearnSpin();
-
-			WriteLock lock( _estimatorMutex );
-			ROS_INFO_STREAM( "Updating models..." );
-			_estimator.SetTransCovModel( *_transModel );
-			typedef ModelRegistry::value_type Item;
-			BOOST_FOREACH( const Item &item, _obsModels )
-			{
-				const std::string& name = item.first;
-				const CovarianceModel::Ptr& model = item.second;
-				_estimator.SetObsCovModel( name, *model );
-			}
-		}
 	}
 
 private:
@@ -348,14 +283,6 @@ private:
 	ros::Duration _headLag;
 	VelocityEstimator _estimator;
 	Mutex _estimatorMutex;
-
-	// ros::Timer _learnTimer;
-	double _learnRate;
-	NoiseLearner _learner;
-	Mutex _learnerMutex;
-	CovarianceModel::Ptr _transModel;
-	typedef std::unordered_map<std::string, CovarianceModel::Ptr> ModelRegistry;
-	ModelRegistry _obsModels;
 };
 
 int main( int argc, char** argv )
@@ -371,7 +298,7 @@ int main( int argc, char** argv )
 
 	ros::AsyncSpinner spinner( numThreads );
 	spinner.start();
-	estimator.LearnSpin();
+	ros::waitForShutdown();
 
 	return 0;
 }

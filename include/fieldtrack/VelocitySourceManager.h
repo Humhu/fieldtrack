@@ -3,7 +3,7 @@
 #include <ros/ros.h>
 #include "fieldtrack/FieldtrackCommon.h"
 #include "fieldtrack/AdaptiveCovarianceEstimator.h"
-#include "fieldtrack/CovarianceModels.h"
+// #include "fieldtrack/CovarianceModels.h"
 #include "extrinsics_array/ExtrinsicsInterface.h"
 
 namespace argus
@@ -30,8 +30,8 @@ public:
 	bool CheckLogLikelihood( double ll ) const;
 	const MatrixType& GetIndexMatrix() const;
 
-	CovarianceModel::Ptr InitializeModel() const;
-	void SetModel( const CovarianceModel& model );
+	// CovarianceModel::Ptr InitializeModel() const;
+	// void SetModel( const CovarianceModel& model );
 
 	DerivObservation operator()( const geometry_msgs::PoseStamped& msg );
 	DerivObservation operator()( const geometry_msgs::PoseWithCovarianceStamped& msg );

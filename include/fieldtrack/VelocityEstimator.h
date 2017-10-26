@@ -4,7 +4,7 @@
 
 #include "fieldtrack/BufferedEstimator.h"
 #include "fieldtrack/VelocitySourceManager.h"
-#include "fieldtrack/CovarianceModels.h"
+// #include "fieldtrack/CovarianceModels.h"
 #include "extrinsics_array/ExtrinsicsInterface.h"
 
 #include <nav_msgs/Odometry.h>
@@ -28,10 +28,10 @@ public:
 	geometry_msgs::TwistStamped GetTwist() const;
 	geometry_msgs::TwistWithCovarianceStamped GetTwistWithCovariance() const;
 
-	CovarianceModel::Ptr InitTransCovModel() const;
-	std::unordered_map<std::string, CovarianceModel::Ptr> InitObsCovModels() const;
-	void SetTransCovModel( const CovarianceModel& model );
-	void SetObsCovModel( const std::string& name, const CovarianceModel& model );
+	// CovarianceModel::Ptr InitTransCovModel() const;
+	// std::unordered_map<std::string, CovarianceModel::Ptr> InitObsCovModels() const;
+	// void SetTransCovModel( const CovarianceModel& model );
+	// void SetObsCovModel( const std::string& name, const CovarianceModel& model );
 
 	unsigned int StateDim() const;
 	unsigned int FullDim() const;
