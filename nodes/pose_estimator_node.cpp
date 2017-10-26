@@ -22,12 +22,14 @@ public:
 
 	PoseEstimatorNode( ros::NodeHandle& nh, ros::NodeHandle& ph )
 	{
-		_extrinsicsManager = std::make_shared<ExtrinsicsInterface>( nh, ph );
-		_estimator.Initialize( ph, _extrinsicsManager );
-
 		double headLag;
 		GetParamRequired( ph, "update_lag", headLag );
 		_headLag = ros::Duration( headLag );
+
+		_extrinsicsManager = std::make_shared<ExtrinsicsInterface>( nh, ph );
+		// NOTE Buffer 2 times the lag in velocities
+		_estimator.Initialize( ph, _extrinsicsManager, 2*headLag );
+
 
 		_resetServer = ph.advertiseService( "reset",
 		                                    &PoseEstimatorNode::ResetCallback,

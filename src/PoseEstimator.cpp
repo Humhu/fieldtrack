@@ -3,13 +3,16 @@
 #include "argus_utils/utils/ParamUtils.h"
 #include "argus_utils/random/MultivariateGaussian.hpp"
 
+#include <boost/foreach.hpp>
+
 namespace argus
 {
 PoseEstimator::PoseEstimator() {}
 
 // TODO Support 2D mode
 void PoseEstimator::Initialize( ros::NodeHandle& ph,
-                                ExtrinsicsInterface::Ptr extrinsics )
+                                ExtrinsicsInterface::Ptr extrinsics,
+                                double velBuffLen )
 {
 	GetParamRequired( ph, "reference_frame", _referenceFrame );
 	GetParamRequired( ph, "body_frame", _bodyFrame );
@@ -45,11 +48,13 @@ void PoseEstimator::Initialize( ros::NodeHandle& ph,
 		                                        _bodyFrame,
 		                                        extrinsics );
 	}
+
+	_velocityIntegrator.SetMaxBuffLen( velBuffLen );
 }
 
 void PoseEstimator::BufferVelocity( const ros::Time& time,
-                                    const VectorType& vel,
-                                    const MatrixType& cov )
+                                    const PoseSE3::TangentVector& vel,
+                                    const PoseSE3::CovarianceMatrix& cov )
 {
 	if( time < GetFilterTime() )
 	{
@@ -57,9 +62,7 @@ void PoseEstimator::BufferVelocity( const ros::Time& time,
 		                 " before filter time " << GetFilterTime() );
 		return;
 	}
-	_velocityBuffer.emplace( std::piecewise_construct,
-	                         std::forward_as_tuple( time ),
-	                         std::forward_as_tuple( vel, cov ) );
+	_velocityIntegrator.BufferInfo( time.toSec(), vel, cov );
 }
 
 nav_msgs::Odometry PoseEstimator::GetOdom() const
@@ -71,8 +74,8 @@ nav_msgs::Odometry PoseEstimator::GetOdom() const
 	msg.pose.pose = PoseToMsg( _filter.GetState() );
 	SerializeMatrix( _filter.GetCovariance(), msg.pose.covariance );
 
-	msg.twist.twist = TangentToMsg( _lastVel );
-	SerializeMatrix( _lastVelCov, msg.twist.covariance );
+	msg.twist.twist = TangentToMsg( _velocityIntegrator.GetLatestVelocity() );
+	SerializeMatrix( _velocityIntegrator.GetLatestCovariance(), msg.twist.covariance );
 
 	return msg;
 }
@@ -96,51 +99,51 @@ geometry_msgs::PoseWithCovarianceStamped PoseEstimator::GetPoseWithCovariance() 
 	return msg;
 }
 
-CovarianceModel::Ptr PoseEstimator::InitTransCovModel() const
-{
-	TimeScaledCovariance::Ptr cov = std::make_shared<TimeScaledCovariance>();
-	cov->Initialize( _transCovRate );
-	return cov;
-}
+// CovarianceModel::Ptr PoseEstimator::InitTransCovModel() const
+// {
+//  TimeScaledCovariance::Ptr cov = std::make_shared<TimeScaledCovariance>();
+//  cov->Initialize( _transCovRate );
+//  return cov;
+// }
 
-std::unordered_map<std::string, CovarianceModel::Ptr>
-PoseEstimator::InitObsCovModels() const
-{
-	std::unordered_map<std::string, CovarianceModel::Ptr> out;
-	typedef SourceRegistry::value_type Item;
-	BOOST_FOREACH( const Item &item, _sourceRegistry )
-	{
-		const std::string& name = item.first;
-		const PoseSourceManager& manager = item.second;
-		out[name] = manager.InitializeModel();
-	}
-	return out;
-}
+// std::unordered_map<std::string, CovarianceModel::Ptr>
+// PoseEstimator::InitObsCovModels() const
+// {
+//  std::unordered_map<std::string, CovarianceModel::Ptr> out;
+//  typedef SourceRegistry::value_type Item;
+//  BOOST_FOREACH( const Item &item, _sourceRegistry )
+//  {
+//      const std::string& name = item.first;
+//      const PoseSourceManager& manager = item.second;
+//      out[name] = manager.InitializeModel();
+//  }
+//  return out;
+// }
 
-void PoseEstimator::SetTransCovModel( const CovarianceModel& model )
-{
-	// TODO Different transition covariance modes
-	try
-	{
-		const FixedCovariance& mod = dynamic_cast<const FixedCovariance&>( model );
-		_transCovRate = mod.GetValue();
-		ROS_INFO_STREAM( "Transition covariance rate updated to: " << std::endl << _transCovRate );
-	}
-	catch( std::bad_cast& e )
-	{
-		throw std::invalid_argument( "Transition cov type mismatch: " + std::string( e.what() ) );
-	}
-}
+// void PoseEstimator::SetTransCovModel( const CovarianceModel& model )
+// {
+//  // TODO Different transition covariance modes
+//  try
+//  {
+//      const FixedCovariance& mod = dynamic_cast<const FixedCovariance&>( model );
+//      _transCovRate = mod.GetValue();
+//      ROS_INFO_STREAM( "Transition covariance rate updated to: " << std::endl << _transCovRate );
+//  }
+//  catch( std::bad_cast& e )
+//  {
+//      throw std::invalid_argument( "Transition cov type mismatch: " + std::string( e.what() ) );
+//  }
+// }
 
-void PoseEstimator::SetObsCovModel( const std::string& name,
-                                    const CovarianceModel& model )
-{
-	if( _sourceRegistry.count( name ) == 0 )
-	{
-		throw std::invalid_argument( "Source " + name + " not registered!" );
-	}
-	_sourceRegistry[name].SetModel( model );
-}
+// void PoseEstimator::SetObsCovModel( const std::string& name,
+//                                     const CovarianceModel& model )
+// {
+//  if( _sourceRegistry.count( name ) == 0 )
+//  {
+//      throw std::invalid_argument( "Source " + name + " not registered!" );
+//  }
+//  _sourceRegistry[name].SetModel( model );
+// }
 
 void PoseEstimator::ResetDerived( const ros::Time& time,
                                   const VectorType& state,
@@ -151,7 +154,6 @@ void PoseEstimator::ResetDerived( const ros::Time& time,
 	                                    PoseSE3::CovarianceMatrix( cov );
 
 	_filter.Initialize( initPose, initCov );
-	_velocityBuffer.clear();
 
 	// Reset all observation covariance adapters
 	typedef SourceRegistry::value_type Item;
@@ -160,15 +162,22 @@ void PoseEstimator::ResetDerived( const ros::Time& time,
 		item.second.Reset();
 	}
 
-	_lastVel.setZero();
-	_lastVelCov.setZero();
+	_velocityIntegrator.Reset();
 }
 
 PredictInfo PoseEstimator::PredictUntil( const ros::Time& until )
 {
 	PoseSE3 displacement;
 	PoseSE3::CovarianceMatrix covariance;
-	IntegrateVelocities( GetFilterTime(), until, displacement, covariance );
+	covariance.setZero();
+	if( !_velocityIntegrator.Integrate( GetFilterTime().toSec(),
+	                                    until.toSec(),
+	                                    displacement,
+	                                    covariance,
+	                                    true ) )
+	{
+		ROS_WARN_STREAM( "Could not integrate velocity from to " << until );
+	}
 	PredictInfo info = _filter.Predict( displacement, covariance );
 	info.step_dt = (until - GetFilterTime() ).toSec();
 	return info;
@@ -219,60 +228,5 @@ void PoseEstimator::CheckFilter()
 		                 _maxEntropyThreshold << " Resetting filter..." );
 		Reset( GetFilterTime() );
 	}
-}
-
-void PoseEstimator::IntegrateVelocities( const ros::Time& from,
-                                         const ros::Time& to,
-                                         PoseSE3& disp,
-                                         PoseSE3::CovarianceMatrix& cov )
-{
-	disp = PoseSE3();
-	cov.setZero();
-
-	bool initialized = false;
-	// If we're not operating in velocity mode, these initial values
-	// will default behavior to fixed covariance integration
-	ros::Time lastTime = from;
-	VectorType lastVel = PoseSE3::TangentVector::Zero();
-	PoseSE3::CovarianceMatrix lastCov = _transCovRate;
-	while( !_velocityBuffer.empty() )
-	{
-		VelocityBuffer::const_iterator oldest = _velocityBuffer.begin();
-		const ros::Time& velTime = oldest->first;
-		const VelocityInfo& info = oldest->second;
-		const VectorType& vel = info.first;
-		const MatrixType& velCov = info.second;
-
-		if( velTime < from )
-		{
-			_velocityBuffer.erase( oldest );
-			continue;
-		}
-
-		if( velTime > to )
-		{
-			break;
-		}
-
-		if( initialized )
-		{
-			double dt = (velTime - lastTime).toSec();
-			disp = disp * PoseSE3::Exp( dt * lastVel );
-			cov += dt * lastCov;
-		}
-
-		initialized = true;
-		lastTime = velTime;
-		lastVel = vel;
-		lastCov = velCov;
-		_velocityBuffer.erase( oldest );
-	}
-
-	double dt = (to - lastTime).toSec();
-	disp = disp * PoseSE3::Exp( dt * lastVel );
-	cov += dt * lastCov;
-
-	_lastVel = lastVel;
-	_lastVelCov = lastCov;
 }
 }
