@@ -31,18 +31,39 @@ Kalman filters require the observation noise covariance to be specified for each
 ## Transition Covariance Rates
 The fieldtrack filters operate in continuous time. Thus, instead of using a fixed transition covariance, we use transition covariance *rates* that are scaled linearly with the transition time length.
 
+## Log-Likelihood Gating
+Outlier observations can be detected and rejected by computing their log-likelihood according to the current filter belief state. Unfortunately there is not really a useful scale to interpret log-likelihood values by, so you will have to experiment and see what works.
+
+## Velocity Integration
+The pose filter can optionally subscribe to a velocity message topic and integrate velocities to perform predict steps in between observations. The velocity integrator buffer is also cloned as part of the buffered-cloning filter operation. Integration of displacements and covariances is performed with zero-order-hold interpolation. For more information see `argus_utils/geometry/VelocityIntegrator.hpp`.
+
 # Usage
 ## Specifying Matrices
 Fieldtrack uses the argus_utils parameter reading tools for loading covariance matrices. In short, diagonal N by N matrices can be specified with an array of N floats (inf and nan are parseable as well), and dense N by N matrices can be specified row-major with an array of N * N floats. For more details, refer to [argus_utils](https://github.com/Humhu/argus_utils).
 
+## Specifying Dimensions
+The velocity filter can use specific parts of a message to generate observations. This is especially useful in 2D mode, or for partial observations. The message parts are specified using *dimensional specification strings*, which are in the form (pos, ori)\_(x, y, z)\_(order). The first part (pos, ori) specifies if the position or orientation derivative should be looked at. The second part (x, y, z) specifies which component of the derivative to look at. The third part (order) specifies which order of derivative should be looked at, with 1 meaning velocity and 2 meaning acceleration. 
+
+ROS velocity message types (`geometry_msgs/TwistStamped`, etc.) support all velocity derivatives. The `sensor_msgs/Imu` message has orientation velocity derivatives and linear acceleration derivatives. For example, `pos_x_2` refers to the linear x acceleration, and `ori_y_1` refers to the orientation y velocity.
+
 ## Specifying Update Sources
 Observation update sources for fieldtrack filters are specified with nested blocks of private parameters in ~update_sources. The format is illustrated below.
+
+### Common
 * `~update_sources/[name]`: The block entrypoint is also the name of the source for debug purposes
 * `~update_sources/[name]/type`: ('pose', 'pose_with_cov', 'transform', 'imu', 'twist', or 'twist_with_cov') The topic message type
 * `~update_sources/[name]/topic`: (string) The message topic path from the node namespace (not private)
 * `~update_sources/[name]/buffer_size`: (unsigned int, default 10) The subscription topic buffer length
 * `~update_sources/[name]/min_log_likelihood`: (float, default -inf) Likelihood gating threshold for observations
 
+### Velocity Only
+* `~update_sources/[name]/observed_dims`: (array of string) Array of dimension specification strings identifying which components of the observation to use
+
+### Pose Only
+* `~update_sources/[name]/invert_transform`: (bool, default false) Whether to invert the direction of the pose messages received, flipping the observer and target and inverting the pose
+* `~update_sources/[name]/reference_frame`: (string, default '') The fixed observer frame to use for `geometry_msgs/PoseStamped` and `geometry_msgs/PoseStampedWithCovariance` messages
+
+### Covariances
 Observation covariances are populated in one of three ways: pass-through, fixed, or adaptive. Each mode and their parameters are detailed below:
 
 * `~update_sources/[name]/mode`: ('pass', 'fixed', 'adaptive') The observation covariance type
@@ -69,6 +90,49 @@ Adaptive uses an adaptive Kalman covariance estimator. Specifically, we use a st
 * `~update_sources/[name]/decay_rate`: (positive float, default 1.0) The time constant used to compute exponential weights as exp( -age * decay_rate )
 
 # Nodes
+## pose_estimator_node
+This node can subscribe to a variety of topic types to estimate the pose of a robot. Internally the node wraps a buffered-cloning manifold Kalman filter tracking which performs predict steps by integrating a velocity signal.
+
+### Supported Topic Types
+The pose estimator interprets the below topic types into observations through `PoseSourceManager`. The message header timestamps are used to order the observations, and the header frame IDs are used to transform pose to the robot body frame with TF.
+
+* `geometry_msgs/PoseStamped`: An observation of the frame `header/frame_id` from a parameter-specified frame (see below)
+* `geometry_msgs/PoseStampedWithCovariance`: An observation of the robot body velocity at the frame `header/frame_id` from a parameter-specified frame (see below), plus a noise covariance
+* `geometry_msgs/TransformStamped`: An observation of the frame `header/frame_id` from `child_frame_id`
+* `sensor_msgs/Imu`: Absolute orientation observation (to be implemented)
+
+Note that the observer frame is expected to have extrinsics relative to the robot body frame, and the target (observed frame) is expected to have extrinsics relative to the pose reference frame. As an example, to localize `robot_frame` relative to `map_frame`, we expect observations of `header/frame_id:=landmark_frame` from `child_frame_id:=camera_frame`.
+
+### Parameters
+#### Filtering
+* `~body_frame`: (string) Body frame ID
+* `~max_entropy_threshold`: (float, default inf) Maximum estimate entropy after which the filter is reset
+* `~filter_order`: (unsigned int) The number of velocity derivatives to track. Zero means track only velocity.
+* `~initial_mean`: (n-array of float, default [zeros]) The filter velocity on initialization and after reset. Should be length 3 x (order+1) for 2D mode, 6 x (order+1) for 3D mode.
+* `~initial_covariance`: (array of float parseable as matrix, default [zeros]) The filter covariance on initialization and after reset. Should be length N for diagonal matrix, or N * N for dense matrix, where N is length of initial mean (see above)
+* `~transition_covariance`: (array of float parseable as matrix) The filter transition covariance rate. Same size requirements as initial_covariance.
+
+#### Velocity Prediction
+* `~velocity_mode`: ('twist', 'twist_with_cov', 'odom', or not specified) If exists, specifies the velocity prediction message type
+* `~velocity_topic`: (string) The velocity prediction topic to subscribe to
+* `~velocity_covariance`: (array of floats parseable to matrix) The fixed covariance rate to use if in 'twist' velocity prediction mode
+
+#### Spinning
+* `~update_lag`: (float) Buffer lag in seconds
+* `~num_threads`: (unsigned int, default 1) Number of spinner threads to use
+* `~update_rate`: (float) Update and publish rate in Hz
+
+#### Publishing
+* `~publish_odom`: (bool, default false) Whether or not to publish `nav_msgs/Odometry` messages on topic `odom`
+* `~odom_buff_len`: (unsigned int, default 10) The odometry publisher buffer length
+* `~publish_pose`: (bool, default false) Whether or not to publish `geometry_msgs/PoseStamped` on topic `pose`
+* `~pose_buff_len`: (unsigned int, default 10) The twist publisher buffer length
+* `~publish_pose_with_cov`: (bool default false) Whether or not to publish `geometry_msgs/PoseStampedWithCovariance` on topic `pose_with_cov`
+* `~pose_with_cov_buff_len`: (unsigned int, default 10) The pose with covariance publisher buffer length
+* `~publish_info`: (bool, default false) Whether or not to publish `argus_msgs/FilterInfo` on topic `info`
+* `~info_buff_len`: (unsigned int, default 10) The info publisher buffer length
+* `~publish_tf`: (bool, default false) Whether or not to publish the pose to TF
+
 ## velocity_estimator_node
 This node can subscribe to a variety of topic types to estimate the body velocity of a robot. Internally the node wraps a buffered-cloning Kalman filter tracking a specifiable number of pose derivatives, i.e. a first-order filter tracks only velocity, a second-order filter tracks velocity and acceleration.
 
