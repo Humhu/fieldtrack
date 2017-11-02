@@ -24,6 +24,9 @@ void PoseSourceManager::Initialize( ros::NodeHandle& ph,
 	GetParam( ph, "reference_frame", _obsRefFrame );
 	GetParam( ph, "invert_transform", _invertTransform, false );
 
+	GetParam( ph, "min_log_likelihood", _minLogLikelihood,
+	-std::numeric_limits<double>::infinity() );
+
 	// Parse covariance operating mode
 	if( _mode == COV_PASS )
 	{
@@ -97,6 +100,11 @@ unsigned int PoseSourceManager::GetDim() const
 // 		throw std::invalid_argument( "Incorrect model type: " + std::string( e.what() ) );
 // 	}
 // }
+
+bool PoseSourceManager::CheckLogLikelihood( double ll ) const
+{
+	return !std::isnan(ll) && ll > _minLogLikelihood;
+}
 
 void PoseSourceManager::Update( const UpdateInfo& info )
 {

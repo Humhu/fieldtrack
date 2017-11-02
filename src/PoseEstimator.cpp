@@ -195,27 +195,18 @@ bool PoseEstimator::ProcessMessage( const std::string& source,
 	VectorType v = PoseSE3::Log( obs.pose.Inverse() * _filter.GetState() );
 	MatrixType V = _filter.GetCovariance() + obs.covariance;
 	double ll = GaussianLogPdf( V, v );
-	if( std::isnan( ll ) )
-	{
-		ROS_WARN_STREAM( "Log likelihood is nan!" );
-		return false;
-	}
-	else if( ll < _logLikelihoodThreshold )
+	if( !manager.CheckLogLikelihood( ll ) )
 	{
 		ROS_WARN_STREAM( "Rejecting observation from " <<
-		                 source << " with log likelihood " <<
-		                 ll << " less than threshold " <<
-		                 _logLikelihoodThreshold );
+		                 source << " with log likelihood " << ll );
 		return false;
 	}
-	else // Perform filter update
-	{
-		info = _filter.Update( obs.pose, obs.covariance );
-		info.time = GetFilterTime();
-		info.frameId = source;
 
-		manager.Update( info );
-	}
+	info = _filter.Update( obs.pose, obs.covariance );
+	info.time = GetFilterTime();
+	info.frameId = source;
+
+	manager.Update( info );
 	return true;
 }
 

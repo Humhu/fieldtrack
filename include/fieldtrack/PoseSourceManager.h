@@ -23,6 +23,7 @@ public:
 
 	void Update( const UpdateInfo& info );
 	void Reset();
+	bool CheckLogLikelihood( double ll ) const;
 
 	// CovarianceModel::Ptr InitializeModel() const;
 	// void SetModel( const CovarianceModel& model );
@@ -47,6 +48,8 @@ private:
 	CovarianceMode _mode;
 	MatrixType _fixedCov;
 	AdaptiveObsCovEstimator _adaptiveCov;
+	double _minLogLikelihood;	
+
 
 	unsigned int GetDim() const;
 	PoseObservation ProcessPose( PoseSE3 pose,

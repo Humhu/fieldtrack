@@ -50,15 +50,15 @@ public:
 			GetParamRequired( info, "type", type );
 			GetParam( info, "buffer_size", buffSize, (unsigned int) 10 );
 
-			if( type == "pose_stamped" )
+			if( type == "pose" )
 			{
 				SubscribeToUpdates<geometry_msgs::PoseStamped>( nh, topic, buffSize, sourceName );
 			}
-			else if( type == "pose_cov_stamped" )
+			else if( type == "pose_cov" )
 			{
 				SubscribeToUpdates<geometry_msgs::PoseWithCovarianceStamped>( nh, topic, buffSize, sourceName );
 			}
-			else if( type == "transform_stamped" )
+			else if( type == "transform" )
 			{
 				SubscribeToUpdates<geometry_msgs::TransformStamped>( nh, topic, buffSize, sourceName );
 			}
