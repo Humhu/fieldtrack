@@ -27,9 +27,6 @@ public:
 		_headLag = ros::Duration( headLag );
 
 		_extrinsicsManager = std::make_shared<ExtrinsicsInterface>( nh, ph );
-		// NOTE Buffer 2 times the lag in velocities
-		_estimator.Initialize( ph, _extrinsicsManager, 2*headLag );
-
 
 		_resetServer = ph.advertiseService( "reset",
 		                                    &PoseEstimatorNode::ResetCallback,
@@ -72,10 +69,12 @@ public:
 			}
 		}
 
+		bool useVel = false;
 		std::string velTopic, velMode;
 		if( GetParam( ph, "velocity_mode", velMode ) &&
 		    GetParam( ph, "velocity_topic", velTopic ) )
 		{
+			useVel = true;
 			unsigned int buffSize;
 			GetParam( ph, "velocity_buff_len", buffSize, (unsigned int) 10 );
 
@@ -93,6 +92,9 @@ public:
 				_velSub = nh.subscribe( velTopic, buffSize, &PoseEstimatorNode::OdomCallback, this );
 			}
 		}
+
+		// NOTE Buffer 2 times the lag in velocities
+		_estimator.Initialize( ph, useVel, _extrinsicsManager, 2*headLag );
 
 		// Parse output parameters
 		GetParam( ph, "publish_odom", _publishOdom, false );

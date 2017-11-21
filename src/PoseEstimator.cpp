@@ -11,6 +11,7 @@ PoseEstimator::PoseEstimator() {}
 
 // TODO Support 2D mode
 void PoseEstimator::Initialize( ros::NodeHandle& ph,
+                                bool useVel,
                                 ExtrinsicsInterface::Ptr extrinsics,
                                 double velBuffLen )
 {
@@ -28,7 +29,11 @@ void PoseEstimator::Initialize( ros::NodeHandle& ph,
 	GetParamRequired( ph, "initial_covariance", _initialCovariance );
 	_filter.Initialize( _initialPose, _initialCovariance );
 
-	GetParamRequired( ph, "transition_covariance", _transCovRate );
+	if( !useVel )
+	{
+		GetParamRequired( ph, "transition_covariance", _transCovRate );
+	}
+	_enableVelocity = useVel;
 
 	// Parse all update sources
 	YAML::Node updateSources;
@@ -169,17 +174,25 @@ PredictInfo PoseEstimator::PredictUntil( const ros::Time& until )
 {
 	PoseSE3 displacement;
 	PoseSE3::CovarianceMatrix covariance;
-	covariance.setZero();
-	if( !_velocityIntegrator.Integrate( GetFilterTime().toSec(),
-	                                    until.toSec(),
-	                                    displacement,
-	                                    covariance,
-	                                    true ) )
+	double dt = (until - GetFilterTime() ).toSec();
+	if( _enableVelocity )
 	{
-		ROS_WARN_STREAM( "Could not integrate velocity from to " << until );
+		covariance.setZero();
+		if( !_velocityIntegrator.Integrate( GetFilterTime().toSec(),
+											until.toSec(),
+											displacement,
+											covariance,
+											true ) )
+		{
+			ROS_WARN_STREAM( "Could not integrate velocity from to " << until );
+		}
+	}
+	else
+	{
+		covariance = _transCovRate * dt;
 	}
 	PredictInfo info = _filter.Predict( displacement, covariance );
-	info.step_dt = (until - GetFilterTime() ).toSec();
+	info.step_dt = dt;
 	return info;
 }
 

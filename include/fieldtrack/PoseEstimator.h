@@ -22,8 +22,9 @@ public:
 
 	PoseEstimator();
 
-	void Initialize( ros::NodeHandle& ph, ExtrinsicsInterface::Ptr extrinsics,
-	                 double velBuffLen );
+	void Initialize( ros::NodeHandle& ph, bool useVel,
+	                 ExtrinsicsInterface::Ptr extrinsics, 
+					 double velBuffLen );
 
 	void BufferVelocity( const ros::Time& time,
 	                     const PoseSE3::TangentVector& vel,
@@ -46,6 +47,8 @@ private:
 	PoseSE3 _initialPose;
 	PoseSE3::CovarianceMatrix _initialCovariance;
 	PoseSE3::CovarianceMatrix _transCovRate;
+
+	bool _enableVelocity;
 
 	std::string _referenceFrame;
 	std::string _bodyFrame;
