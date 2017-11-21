@@ -63,7 +63,7 @@ void PoseEstimator::BufferVelocity( const ros::Time& time,
 {
 	if( time < GetFilterTime() )
 	{
-		ROS_WARN_STREAM( "Velocity info from time " << time <<
+		ROS_WARN_STREAM_THROTTLE( 30, "Velocity info from time " << time <<
 		                 " before filter time " << GetFilterTime() );
 		return;
 	}
@@ -184,7 +184,7 @@ PredictInfo PoseEstimator::PredictUntil( const ros::Time& until )
 											covariance,
 											true ) )
 		{
-			ROS_WARN_STREAM( "Could not integrate velocity from to " << until );
+			ROS_WARN_STREAM_THROTTLE( 30, "Could not integrate velocity from to " << until );
 		}
 	}
 	else
@@ -228,7 +228,7 @@ void PoseEstimator::CheckFilter()
 	double entropy = GaussianEntropy( _filter.GetCovariance() );
 	if( entropy > _maxEntropyThreshold )
 	{
-		ROS_WARN_STREAM( "Filter entropy: " << entropy << " greater than max: " <<
+		ROS_WARN_STREAM_THROTTLE( 1, "Filter entropy: " << entropy << " greater than max: " <<
 		                 _maxEntropyThreshold << " Resetting filter..." );
 		Reset( GetFilterTime() );
 	}

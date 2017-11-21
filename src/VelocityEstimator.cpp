@@ -219,7 +219,7 @@ void VelocityEstimator::ResetDerived( const ros::Time& time,
 	}
 
 	// Reset the filter state
-	ROS_INFO_STREAM( "Resetting filter mean to: " << initState.transpose() <<
+	ROS_INFO_STREAM_THROTTLE( 1, "Resetting filter mean to: " << initState.transpose() <<
 	                 " and cov: " << std::endl << initCov );
 	_filter.Initialize( initState, initCov );
 
@@ -273,7 +273,7 @@ void VelocityEstimator::CheckFilter()
 	double entropy = GaussianEntropy( _filter.GetCovariance() );
 	if( entropy > _maxEntropyThreshold )
 	{
-		ROS_WARN_STREAM( "Filter entropy: " << entropy << " greater than max: " <<
+		ROS_WARN_STREAM_THROTTLE( 1, "Filter entropy: " << entropy << " greater than max: " <<
 		                 _maxEntropyThreshold << " Resetting filter..." );
 		ResetDerived( GetFilterTime() );
 	}
